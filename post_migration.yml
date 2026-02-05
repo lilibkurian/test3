@@ -1,0 +1,22 @@
+---
+- name: Post migration steps for the migrated VM from Azure console
+  hosts: azure_windows  # Target the group directly
+  connection: local     # Run Azure modules locally, not on the VM
+  gather_facts: false
+
+  # Map inventory variables to the 'target' structure used in your tasks
+  vars:
+
+    required_rg_tags:
+      business-internalorder: "wl-to-azure-2026"
+    target:
+      vm_name: "{{ inventory_hostname }}"
+      resource_group: "{{ resource_group }}"
+
+  tasks:
+    - name: Tagging Block
+      delegate_to: localhost
+      throttle: 5
+      block:
+        - name: Enforce RG/VM tags
+          ansible.builtin.include_tasks: tasks/update_tags.yml
