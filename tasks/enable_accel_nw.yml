@@ -1,0 +1,111 @@
+---
+- block:
+    - name: Get VM facts (for accel)
+      azure.azcollection.azure_rm_virtualmachine_info:
+        resource_group: "{{ target.resource_group }}"
+        name: "{{ target.vm_name }}"
+      register: vm_info
+
+    - name: Skip if VM not found
+      ansible.builtin.debug:
+        msg: "SKIP ACCEL: VM '{{ target.vm_name }}' not found in RG '{{ target.resource_group }}'"
+      when: (vm_info.vms | default([]) | length) == 0
+
+    - name: Set accel facts
+      ansible.builtin.set_fact:
+        vm: "{{ vm_info.vms[0] }}"
+        image_sku: "{{ (vm_info.vms[0].image.sku | default('')) | lower }}"
+        nic_name: "{{ vm_info.vms[0].network_interface_names[0] }}"
+        vm_was_running: "{{ (vm_info.vms[0].power_state | default('unknown')) == 'running' }}"
+      when: (vm_info.vms | default([]) | length) > 0
+
+    - name: Skip accel if Windows 2008 / 2008R2 detected by image SKU
+      ansible.builtin.debug:
+        msg: "SKIP ACCEL: Windows 2008/2008R2 detected by SKU '{{ image_sku }}' for VM '{{ target.vm_name }}'"
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is search("2008")
+
+    - name: Get NIC current state
+      azure.azcollection.azure_rm_networkinterface_info:
+        resource_group: "{{ target.resource_group }}"
+        name: "{{ nic_name }}"
+      register: nic_info
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is not search("2008")
+
+    # Decide once whether we need to change anything
+    - name: Determine whether accel change is needed + capture NSG
+      ansible.builtin.set_fact:
+        accel_needed: "{{ not (nic_info.networkinterfaces[0].enable_accelerated_networking | default(false)) }}"
+        nic_nsg_id: "{{ nic_info.networkinterfaces[0].security_group | default('') }}"
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is not search("2008")
+
+    # Case 1: already enabled -> report and exit (no deallocate / restart)
+    - name: Report if accel already enabled
+      ansible.builtin.debug:
+        msg: "OK: Accelerated Networking already enabled on NIC '{{ nic_name }}' for VM '{{ target.vm_name }}' — no change."
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is not search("2008")
+        - accel_needed is defined
+        - not accel_needed
+
+    # Case 2: not enabled -> deallocate, update NIC, maybe restart
+    - name: Deallocate VM (only when NIC change is required)
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: "{{ target.resource_group }}"
+        name: "{{ target.vm_name }}"
+        allocated: false
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is not search("2008")
+        - accel_needed | default(false)
+
+    - name: Enable Accelerated Networking on NIC (preserve NSG)
+      azure.azcollection.azure_rm_networkinterface:
+        resource_group: "{{ target.resource_group }}"
+        name: "{{ nic_name }}"
+        enable_accelerated_networking: true
+        security_group: "{{ nic_nsg_id if nic_nsg_id | length > 0 else omit }}"
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is not search("2008")
+        - accel_needed | default(false)
+
+    - name: Start VM again (only if it was running before)
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: "{{ target.resource_group }}"
+        name: "{{ target.vm_name }}"
+        allocated: true
+        started: true
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is not search("2008")
+        - accel_needed | default(false)
+        - vm_was_running | default(false)
+
+    - name: Verify NIC after change
+      azure.azcollection.azure_rm_networkinterface_info:
+        resource_group: "{{ target.resource_group }}"
+        name: "{{ nic_name }}"
+      register: nic_verify
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is not search("2008")
+
+    - name: Show final accel + NSG state
+      ansible.builtin.debug:
+        msg:
+          - "RESULT: {{ target.vm_name }} ({{ target.resource_group }})"
+          - "  NIC: {{ nic_name }} {{ '(no accel change)' if not accel_needed | default(false) else '' }}"
+          - "  Accelerated Networking: {{ nic_verify.networkinterfaces[0].enable_accelerated_networking | default('unknown') }}"
+          - "  NSG: {{ nic_verify.networkinterfaces[0].security_group | default('none') }}"
+      when:
+        - (vm_info.vms | default([]) | length) > 0
+        - image_sku is not search("2008")
+
+  delegate_to: localhost
