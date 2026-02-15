@@ -13,8 +13,15 @@
       resource_group: "{{ resource_group }}"
 
   tasks:
+    - name: Tagging Block
+      throttle: 5
+      block:
+        - name: Enforce RG/VM tags
+          ansible.builtin.include_tasks: tasks/update_tags.yml
+            
     - name: Enable Accelerated Networking Block
       throttle: 3  # <--- CRITICAL: Limits this specific task to 3 VMs at a time
       block:
         - name: Enable accelerated networking for each Azure VM
           ansible.builtin.include_tasks: tasks/enable_accel_nw_parallel.yml
+
