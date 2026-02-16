@@ -23,5 +23,5 @@
       throttle: 3  # <--- CRITICAL: Limits this specific task to 3 VMs at a time
       block:
         - name: Enable accelerated networking for each Azure VM
-          ansible.builtin.include_tasks: tasks/enable_accel_nw_parallel.yml
+          ansible.builtin.include_tasks: tasks/enable_accel_nw.yml
 
