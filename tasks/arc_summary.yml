@@ -7,23 +7,21 @@
       - "Azure Arc machines deleted: {{ deleted_hosts }}"
       - "Azure Arc machines not found: {{ not_found_hosts }}"
   vars:
-    # Logic: It is deleted ONLY if we found a valid ID in the check phase
+    # Logic: It is deleted if the 'found_arc_machine' fact was successfully set
     deleted_hosts: >-
       {%- set res = [] -%}
       {%- for host in ansible_play_hosts -%}
-        {%- set resp = hostvars[host]['arc_info']['response'] | default([]) -%}
-        {%- if resp | length > 0 and 'id' in resp[0] -%}
+        {%- if hostvars[host]['found_arc_machine'] is defined -%}
           {%- set _ = res.append(host) -%}
         {%- endif -%}
       {%- endfor -%}
       {{ res }}
 
-    # Logic: It is 'Not Found' if the response was empty OR contained an error (no 'id')
+    # Logic: It is 'Not Found' if the 'found_arc_machine' fact is missing/undefined
     not_found_hosts: >-
       {%- set res = [] -%}
       {%- for host in ansible_play_hosts -%}
-        {%- set resp = hostvars[host]['arc_info']['response'] | default([]) -%}
-        {%- if resp | length == 0 or 'id' not in resp[0] -%}
+        {%- if hostvars[host]['found_arc_machine'] is undefined -%}
           {%- set _ = res.append(host) -%}
         {%- endif -%}
       {%- endfor -%}
