@@ -5,6 +5,9 @@
   gather_facts: false
   strategy: linear
 
+  environment:
+    PYTHONPATH: "{{ playbook_dir }}/lib:{{ lookup('env', 'PYTHONPATH') }}"
+
   vars:
     # Extracted from your original script
     vcenters_list:
@@ -26,7 +29,3 @@
         - name: Include Decommission Logic
           ansible.builtin.include_tasks: tasks/poweroff_rename_vmware.yml
 
-      # ADD THIS BLOCK ------------------------------------------
-      environment:
-      PYTHONPATH: "{{ playbook_dir }}/lib:{{ lookup('env', 'PYTHONPATH') }}"
-      # ---------------------------------------------------------
