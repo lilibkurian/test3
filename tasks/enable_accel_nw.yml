@@ -75,6 +75,12 @@
         virtual_network: "/subscriptions/{{ nic_info.networkinterfaces[0].virtual_network.subscription_id }}/resourceGroups/{{ nic_info.networkinterfaces[0].virtual_network.resource_group }}/providers/Microsoft.Network/virtualNetworks/{{ nic_info.networkinterfaces[0].virtual_network.name }}"
         subnet_name: "{{ nic_info.networkinterfaces[0].subnet }}"
         #virtual_network_resource_group: "{{ nic_info.networkinterfaces[0].virtual_network.resource_group }}"
+        ip_configurations:
+          - name: "{{ nic_info.networkinterfaces[0].ip_configurations[0].name }}"
+            primary: "{{ nic_info.networkinterfaces[0].ip_configurations[0].primary }}"
+            private_ip_allocation_method: "{{ nic_info.networkinterfaces[0].ip_configurations[0].private_ip_allocation_method }}"
+            # Only include the IP address if it is Static, otherwise omit it
+            private_ip_address: "{{ nic_info.networkinterfaces[0].ip_configurations[0].private_ip_address if nic_info.networkinterfaces[0].ip_configurations[0].private_ip_allocation_method == 'Static' else omit }}"      
       when:
         - (vm_info.vms | default([]) | length) > 0
         - image_sku is not search("2008")
