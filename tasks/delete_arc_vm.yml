@@ -1,6 +1,6 @@
 ---
 # ---------------------------------------------------------
-# STEP 1: Check both Dev and Prod to see where the machine is
+# STEP 1: Check both Dev and Prod
 # ---------------------------------------------------------
 - name: Check for Azure Arc Machine (Looping through Environments)
   azure.azcollection.azure_rm_resource_info:
@@ -9,16 +9,22 @@
     resource_type: machines
     resource_name: "{{ inventory_hostname }}"
     api_version: "2022-03-10"
+    # We still pass this, but the 'environment' block below is what really fixes the auth context
     subscription_id: "{{ item.sub }}"
   delegate_to: localhost
   register: arc_check_results
   ignore_errors: true
+  
+  # CRITICAL FIX: Override the AAP Credential's Subscription ID dynamically
+  environment:
+    AZURE_SUBSCRIPTION_ID: "{{ item.sub }}"
+
   loop:
     - { env: "Dev",  rg: "Levi-AzureArc-SQLdev",  sub: "a0be611e-56e8-4904-a797-bc83861d5c0e" }
     - { env: "Prod", rg: "Levi-AzureArc-Servers", sub: "f272d28a-9a50-4653-b356-5b285c014298" }
 
 # ---------------------------------------------------------
-# STEP 2: Capture the correct details if found
+# STEP 2: Capture details (Logic remains the same)
 # ---------------------------------------------------------
 - name: Set facts for the found machine
   ansible.builtin.set_fact:
@@ -44,12 +50,17 @@
 - name: Delete Azure Arc Machine resource
   azure.azcollection.azure_rm_resource:
     resource_group: "{{ found_arc_machine.resource_group }}"
-    subscription_id: "{{ found_arc_machine.subscription_id }}"
     provider: HybridCompute
     resource_type: machines
     resource_name: "{{ inventory_hostname }}"
     api_version: "2022-03-10"
     state: absent
+    subscription_id: "{{ found_arc_machine.subscription_id }}"
   delegate_to: localhost
   register: arc_delete_result
+  
+  # CRITICAL FIX: Ensure deletion happens in the correct subscription context
+  environment:
+    AZURE_SUBSCRIPTION_ID: "{{ found_arc_machine.subscription_id }}"
+    
   when: found_arc_machine is defined

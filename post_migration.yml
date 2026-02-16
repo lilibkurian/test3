@@ -4,7 +4,7 @@
 #########################################################
 
 - name: Delete Azure Arc Machines
-  hosts: azure_windows
+  hosts: azure_linux
   connection: local
   gather_facts: false
 
