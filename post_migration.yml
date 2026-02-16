@@ -1,20 +1,102 @@
 ---
-######################### Clean up ##########################
-- name: Post migration steps within the VM
-  hosts: azure_windows
-  gather_facts: false
+##############   Login to Linux VM and get the mount points   #############
+- name: Test Connectivity to Linux Infrastructure
+  hosts: azure_linux
+  gather_facts: no
 
   vars:
-    # You can define the variable here, or let the task file use its default
-    agent_name: "Azure Connected Machine Agent"
+    #ansible_user: "{{ lookup('env', 'DOMAIN_SSH_USER') }}"
+    #ansible_ssh_private_key_file: "{{ lookup('env', 'DOMAIN_SSH_KEY_PATH') }}"
 
   tasks:
-    - name: Run Azure Arc Uninstallation Tasks
-      ansible.builtin.include_tasks: tasks/uninstall_arc_tasks.yml
+    - name: Ping the server to verify SSH and Python
+      ansible.builtin.ping:
+      register: ping_result
 
-    - name: Run VMware cleanup tasks
-      ansible.builtin.include_tasks: tasks/disable_vmware_tasks.yml
+    - name: Print success message
+      ansible.builtin.debug:
+        msg: "Success! Connected as {{ ansible_user }} to {{ inventory_hostname }}"
 
-    - name: Check hosts file having on-premises IP
-      ansible.builtin.include_tasks: tasks/check_onprem_ip_in_hosts.yml
-      #tasks/update_hosts_from_onprem.yml
+
+    # Display Mount Points on Linux VMs
+    - name: Run 'df -h' to see disk space usage
+      ansible.builtin.command: df -h
+      register: df_output
+      changed_when: false
+
+    - name: Display 'df -h' output
+      ansible.builtin.debug:
+        msg: "{{ df_output.stdout_lines }}"
+
+################   Login to Linux VM and uninstall Azure Connected Machine Agent    ################
+- name: Uninstall Azure Connected Machine Agent
+  hosts: azure_linux
+  become: yes  # This executes the task with sudo
+  gather_facts: yes
+
+  tasks:
+    - name: Remove azcmagent package (Auto-detects apt/yum)
+      ansible.builtin.package:
+        name: azcmagent
+        state: absent
+      register: remove_result
+
+    - name: Verify removal status
+      ansible.builtin.debug:
+        msg: "{{ 'Package successfully uninstalled.' if remove_result.changed else 'Package not found (already absent).' }}"
+
+############   Login to Linux VM and Disable or uninstall VMware Tools  ##############
+- name: Disable or Uninstall VMware Tools
+  hosts: azure_linux
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Ensure open-vm-tools is uninstalled
+      ansible.builtin.package:
+        name: open-vm-tools
+        state: absent
+      register: uninstall_result
+
+    - name: Display status
+      ansible.builtin.debug:
+        msg: "{{ 'open-vm-tools was successfully uninstalled.' if uninstall_result.changed else 'open-vm-tools was not found (already absent).' }}"
+
+#############   Login to Linux VM and Check /etc/hosts for OnPrem IPs (172.x.x.x)   #############
+- name: Check /etc/hosts for OnPrem IPs (172.x.x.x)
+  hosts: azure_linux
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Search for IPs starting with 172. in /etc/hosts
+      ansible.builtin.shell: grep "^172\." /etc/hosts
+      register: grep_result
+      # rc 0 = found, rc 1 = not found. We fail only on system errors (>1).
+      failed_when: grep_result.rc > 1
+      changed_when: false
+
+    # Group hosts into 'found' or 'missing' lists for the summary play
+    - name: Group hosts based on search results
+      ansible.builtin.group_by:
+        key: "onprem_ip_{{ 'found' if grep_result.rc == 0 else 'missing' }}"
+
+#############   Summary Report   #############
+- name: Display Status Report
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: "--- DETAILS: Hosts containing OnPrem IPs ---"
+      ansible.builtin.debug:
+        msg:
+          - "------------------------------------------------------------"
+          - "HOST: [{{ item }}]"
+          - "{{ hostvars[item]['grep_result']['stdout_lines'] }}"
+      # Loop through the group of hosts where IPs were found
+      loop: "{{ groups['onprem_ip_found'] | default([]) | sort }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "--- SUMMARY: Hosts WITHOUT OnPrem IPs ---"
+      ansible.builtin.debug:
+        msg: "{{ groups['onprem_ip_missing'] | default([]) | sort }}"
