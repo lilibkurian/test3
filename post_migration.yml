@@ -1,19 +1,16 @@
 ---
-#########################################################
-####  Post Application Validation Steps for Windows VMs
-#########################################################
-
-- name: Delete Azure Arc Machines
-  hosts: azure_linux
-  connection: local
+####################   PowerOff and Rename On-Prem VMs   ##################
+- name: Decommission (PowerOff and Rename) On-Prem VMs
+  hosts: azure_windows
   gather_facts: false
+  strategy: linear
+
+  vars:
+    script_path: "{{ playbook_dir }}/scripts/PowerOff-AndRenameVM.ps1"
 
   tasks:
-    - name: Delete Azure Arc Machines
-      throttle: 3
+    - name: Decommission Execution Block
+      throttle: 2  # The script connects to 10 different vCenter in a loop for every single VM
       block:
-        - name: Include Deletion Logic
-          ansible.builtin.include_tasks: tasks/delete_arc_vm.yml
-
-    - name: Run Arc deletion Summary
-      ansible.builtin.include_tasks: tasks/arc_summary.yml
+        - name: Include Decommission Logic
+          ansible.builtin.include_tasks: tasks/poweroff_rename_vmware.yml
