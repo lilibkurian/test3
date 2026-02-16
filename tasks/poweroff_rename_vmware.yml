@@ -7,29 +7,62 @@
   when:
     - lookup('env', 'DOMAIN_USER') == "" or lookup('env', 'DOMAIN_PASSWORD') == ""
 
-- name: Run PowerCLI script
-  command: >
-    pwsh -File "{{ script_path }}"
-    -VMName "{{ inventory_hostname }}"
-    -User "{{ lookup('env', 'DOMAIN_USER') }}"
-    -Password "{{ lookup('env', 'DOMAIN_PASSWORD') }}"
-    -LogPath "{{ playbook_dir }}/scripts/logs/PowerOff_{{ inventory_hostname }}.log"
-  delegate_to: localhost
-  register: script_output
-  #no_log: true
-  # Retry logic to handle vCenter timeouts (Request channel timed out)
-  retries: 3
-  delay: 10
-  until: script_output.rc == 0 or (script_output.stdout | regex_search("VM .* not found"))
-  # Define "Change" vs "Failure"
-  changed_when:
-    - "'Successfully renamed' in script_output.stdout"
-  failed_when:
-    - script_output.rc != 0
-    # The regex below matches "VM", followed by any characters (.*), followed by "not found"
-    - not script_output.stdout | regex_search("VM .* not found")
-  # Keep this to prevent one hard failure (like auth error) from stopping the whole playbook
+# --------------------------------------------------------------------------
+# 1. SEARCH: Loop through vCenters to find where this VM lives
+# --------------------------------------------------------------------------
+- name: Search for VM in vCenters
+  community.vmware.vmware_guest_info:
+    hostname: "{{ item }}"
+    username: "{{ lookup('env', 'DOMAIN_USER') }}"
+    password: "{{ lookup('env', 'DOMAIN_PASSWORD') }}"
+    validate_certs: false
+    name: "{{ inventory_hostname }}"
+  loop: "{{ vcenters_list }}"
+  register: vm_search_results
   ignore_errors: true
+  delegate_to: localhost
+  # This makes it run quietly until it finds the right one
+  no_log: true
+
+- name: Identify correct vCenter
+  set_fact:
+    target_vcenter: "{{ item.item }}"
+    vm_is_found: true
+  loop: "{{ vm_search_results.results }}"
+  when:
+    - item is succeeded
+    - item.instance is defined
+  no_log: true
+
+# --------------------------------------------------------------------------
+# 2. ACTION: Power Off and Rename (Only if VM was found)
+# --------------------------------------------------------------------------
+- name: Power Off VM (Force)
+  community.vmware.vmware_guest_powerstate:
+    hostname: "{{ target_vcenter }}"
+    username: "{{ lookup('env', 'DOMAIN_USER') }}"
+    password: "{{ lookup('env', 'DOMAIN_PASSWORD') }}"
+    validate_certs: false
+    name: "{{ inventory_hostname }}"
+    state: powered-off
+  delegate_to: localhost
+  register: poweroff_result
+  when: vm_is_found is defined
+
+- name: Rename VM
+  community.vmware.vmware_object_rename:
+    hostname: "{{ target_vcenter }}"
+    username: "{{ lookup('env', 'DOMAIN_USER') }}"
+    password: "{{ lookup('env', 'DOMAIN_PASSWORD') }}"
+    validate_certs: false
+    name: "{{ inventory_hostname }}"
+    new_name: "_DoNotPowerOn-{{ inventory_hostname }}"
+    object_type: VirtualMachine
+  delegate_to: localhost
+  register: rename_result
+  when: 
+    - vm_is_found is defined
+    - poweroff_result is succeeded
 
 # --------------------------------------------------------------------------
 # FINAL DECOMMISSION SUMMARY
@@ -46,36 +79,35 @@
       ---------------------------------------------------------------------------------------------------------------------------
 
       {% for host in ansible_play_hosts -%}
-      {%- set host_result = hostvars[host]['script_output'] -%}
+      
+      {# --- Retrieve Variables for specific host --- #}
+      {%- set is_found = hostvars[host]['vm_is_found'] | default(false) -%}
+      {%- set p_res = hostvars[host]['poweroff_result'] | default({}) -%}
+      {%- set r_res = hostvars[host]['rename_result'] | default({}) -%}
+      {%- set found_vc = hostvars[host]['target_vcenter'] | default('None') -%}
 
-      {# --- LOGIC TO DETERMINE STATUS AND MESSAGE --- #}
+      {# --- LOGIC TO DETERMINE STATUS --- #}
+      {%- if not is_found -%}
+          {%- set status = 'Not Found' -%}
+          {%- set msg_raw = 'VM not found in any of the 10 vCenters' -%}
+      
+      {%- elif p_res.failed | default(false) -%}
+          {%- set status = 'PowerOff Failed' -%}
+          {%- set msg_raw = p_res.msg | default('Unknown PowerOff Error') -%}
 
-      {# 1. FAILED CASE #}
-      {%- if host_result.failed is defined and host_result.failed -%}
-        {%- set status = 'FAILED' -%}
-        {%- set raw_line = host_result.stdout_lines[-1] | default(host_result.msg) | default('Unknown Error') -%}
-        {%- set msg_raw = raw_line.split('] ')[-1] | default(raw_line) -%}
+      {%- elif r_res.failed | default(false) -%}
+          {%- set status = 'Rename Failed' -%}
+          {%- set msg_raw = r_res.msg | default('Unknown Rename Error') -%}
 
-      {# 2. CHANGED CASE (Action Taken) #}
-      {%- elif host_result.changed -%}
-        {%- if 'VM is already Powered OFF' in (host_result.stdout | default('')) -%}
-            {%- set status = 'Renamed (Was Off)' -%}
-        {%- else -%}
-            {%- set status = 'Powered Off & Renamed' -%}
-        {%- endif -%}
-
-        {%- set raw_line = host_result.stdout_lines[-1] | default('') -%}
-        {%- set msg_raw = raw_line.split('] ')[-1] | default(raw_line) -%}
-
-      {# 3. SKIPPED/OK CASE (Already Done or Not Found) #}
       {%- else -%}
-        {%- if host_result.stdout is defined and (host_result.stdout | regex_search("VM .* not found")) -%}
-           {%- set status = 'Not Found' -%}
-        {%- else -%}
-           {%- set status = 'Already Done' -%}
-        {%- endif -%}
-        {%- set raw_line = host_result.stdout_lines[-1] | default('No output') -%}
-        {%- set msg_raw = raw_line.split('] ')[-1] | default(raw_line) -%}
+          {%- set status = 'Success' -%}
+          {%- if p_res.changed and r_res.changed -%}
+             {%- set msg_raw = 'Powered Off & Renamed on ' ~ found_vc -%}
+          {%- elif r_res.changed -%}
+             {%- set msg_raw = 'Already Off, Renamed on ' ~ found_vc -%}
+          {%- else -%}
+             {%- set msg_raw = 'Already Off & Renamed on ' ~ found_vc -%}
+          {%- endif -%}
       {%- endif -%}
 
       {{ '%-20s | %-25s | %-60s' | format(host, status, msg_raw | truncate(60)) }}

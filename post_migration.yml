@@ -6,11 +6,22 @@
   strategy: linear
 
   vars:
-    script_path: "{{ playbook_dir }}/scripts/PowerOff-AndRenameVM.ps1"
+    # Extracted from your original script
+    vcenters_list:
+      - dfwvc01.levi.com
+      - dfwvcpg01.levi.com
+      - dfwvcno01.levi.com
+      - dfwvcnoe01.levi.com
+      - dfwvcneom01.levi.com
+      - dalvc20.levi.com
+      - dalvcpg20.levi.com
+      - dalvcpo20.levi.com
+      - dalvcpoe20.levi.com
+      - dalvcpeom20.levi.com
 
   tasks:
     - name: Decommission Execution Block
-      throttle: 2  # The script connects to 10 different vCenter in a loop for every single VM
+      throttle: 2
       block:
         - name: Include Decommission Logic
           ansible.builtin.include_tasks: tasks/poweroff_rename_vmware.yml
