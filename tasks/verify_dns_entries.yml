@@ -1,0 +1,87 @@
+---
+# tasks/verify_dns_entries.yml
+# Validates that each hostname in target_group resolves to the expected IP (ansible_host)
+# Uses nslookup executed from the test Windows VM (WinRM target)
+
+- name: Set DNS target group (can override with -e target_group=...)
+  set_fact:
+    target_group: "{{ target_group }}"
+  changed_when: false
+
+- name: Initialize DNS target list
+  set_fact:
+    dns_targets: []
+  changed_when: false
+
+- name: Build DNS targets from inventory group
+  set_fact:
+    dns_targets: >-
+      {{ dns_targets + [{
+        'dns_name': item,
+        'expected_ip': (hostvars[item].ansible_host | default(''))
+      }] }}
+  loop: "{{ groups[target_group] | default([]) }}"
+  changed_when: false
+
+- name: Show which DNS records will be validated
+  debug:
+    msg: "Will validate DNS records for group '{{ target_group }}': {{ groups[target_group] | default([]) }}"
+  changed_when: false
+
+- name: Validate each DNS name resolves to expected IP (non-fatal)
+  ansible.windows.win_powershell:
+    script: |
+      $name     = "{{ item.dns_name }}"
+      $expected = "{{ item.expected_ip }}"
+
+      $out = nslookup $name 2>&1 | Out-String
+
+      # Extract IPv4 addresses from nslookup output
+      $ips = [regex]::Matches($out, '\b(?:\d{1,3}\.){3}\d{1,3}\b') |
+             ForEach-Object { $_.Value } |
+             Select-Object -Unique
+
+      $ok = $false
+      if ($expected -and ($ips -contains $expected)) { $ok = $true }
+
+      # Emit single-line JSON so Ansible can parse it
+      $resolved = ($ips -join ", ")
+      $obj = [pscustomobject]@{
+        dns_name     = $name
+        expected_ip  = $expected
+        resolved_ips = $resolved
+        ok           = $ok
+      }
+      $obj | ConvertTo-Json -Compress
+  loop: "{{ dns_targets }}"
+  loop_control:
+    label: "{{ item.dns_name }} => expected {{ item.expected_ip }}"
+  register: dns_raw
+  failed_when: false
+  changed_when: false
+
+- name: Normalize win_powershell outputs into JSON strings
+  set_fact:
+    dns_json_lines: "{{ dns_raw.results | map(attribute='output') | map('first') | select('defined') | list }}"
+  changed_when: false
+
+# IMPORTANT: must be 2 tasks (Ansible can't reference dns_results inside same set_fact)
+- name: Parse JSON lines into dns_results
+  set_fact:
+    dns_results: "{{ (dns_json_lines | default([])) | map('from_json') | list }}"
+  changed_when: false
+  failed_when: false
+
+- name: Split dns_results into ok / fail lists
+  set_fact:
+    dns_ok: "{{ (dns_results | default([])) | selectattr('ok', 'equalto', true) | list }}"
+    dns_fail: "{{ (dns_results | default([])) | selectattr('ok', 'equalto', false) | list }}"
+  changed_when: false
+  failed_when: false
+
+- name: DNS validation summary
+  debug:
+    msg:
+      - "DNS validation PASSED for: {{ dns_ok | map(attribute='dns_name') | list }}"
+      - "DNS validation FAILED for: {{ dns_fail | map(attribute='dns_name') | list }}"
+  changed_when: false

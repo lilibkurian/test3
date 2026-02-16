@@ -25,3 +25,19 @@
         - name: Enable accelerated networking for each Azure VM
           ansible.builtin.include_tasks: tasks/enable_accel_nw.yml
 
+###############  Verify DNS resolution IP ####################
+- name: Login to test Windows VM and validate Azure Windows DNS
+  hosts: test_window
+  gather_facts: false
+
+  vars:
+    # Group containing DNS --> IP mappings
+    target_group: "azure_windows"
+
+  tasks:
+    - name: Verify WinRM connectivity
+      ansible.windows.win_ping:
+
+    - name: Verify DNS resolution for Azure Windows hosts
+      ansible.builtin.include_tasks: tasks/verify_dns_entries.yml
+
