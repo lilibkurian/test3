@@ -11,16 +11,16 @@
   vars:
     # Extracted from your original script
     vcenters_list:
-      - dfwvc01.levi.com
-      - dfwvcpg01.levi.com
-      - dfwvcno01.levi.com
-      - dfwvcnoe01.levi.com
-      - dfwvcneom01.levi.com
-      - dalvc20.levi.com
-      - dalvcpg20.levi.com
-      - dalvcpo20.levi.com
-      - dalvcpoe20.levi.com
-      - dalvcpeom20.levi.com
+      - 172.26.87.88   #  dfwvc01.levi.com
+      - 172.26.87.208  #  dfwvcpg01.levi.com
+      - 172.26.87.204  #  dfwvcno01.levi.com
+      - 172.26.87.205  #  dfwvcnoe01.levi.com
+      - 172.26.87.206  #  dfwvcneom01.levi.com
+      - 172.26.87.1    #  dalvc20.levi.com
+      - 172.26.87.92   #  dalvcpg20.levi.com
+      - 172.26.87.93   #  dalvcpo20.levi.com
+      - 172.26.87.94   #  dalvcpoe20.levi.com
+      - 172.26.87.95   #  dalvcpeom20.levi.com
 
   tasks:
     - name: Decommission Execution Block
