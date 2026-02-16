@@ -1,62 +1,54 @@
 ---
-- name: Find and Delete Azure Arc Machine
-  hosts: all
-  gather_facts: false
+# ---------------------------------------------------------
+# STEP 1: Check both Dev and Prod to see where the machine is
+# ---------------------------------------------------------
+- name: Check for Azure Arc Machine (Looping through Environments)
+  azure.azcollection.azure_rm_resource_info:
+    resource_group: "{{ item.rg }}"
+    provider: HybridCompute
+    resource_type: machines
+    resource_name: "{{ inventory_hostname }}"
+    api_version: "2022-03-10"
+    subscription_id: "{{ item.sub }}"
+  delegate_to: localhost
+  register: arc_check_results
+  ignore_errors: true
+  loop:
+    - { env: "Dev",  rg: "Levi-AzureArc-SQLdev",  sub: "a0be611e-56e8-4904-a797-bc83861d5c0e" }
+    - { env: "Prod", rg: "Levi-AzureArc-Servers", sub: "f272d28a-9a50-4653-b356-5b285c014298" }
 
-  tasks:
-    # ---------------------------------------------------------
-    # STEP 1: Check both Dev and Prod to see where the machine is
-    # ---------------------------------------------------------
-    - name: Check for Azure Arc Machine (Looping through Environments)
-      azure.azcollection.azure_rm_resource_info:
-        resource_group: "{{ item.rg }}"
-        provider: HybridCompute
-        resource_type: machines
-        resource_name: "{{ inventory_hostname }}"
-        api_version: "2022-03-10"
-        subscription_id: "{{ item.sub }}"
-      delegate_to: localhost
-      register: arc_check_results
-      ignore_errors: true
-      loop:
-        - { env: "Dev",  rg: "Levi-AzureArc-SQLdev",  sub: "a0be611e-56e8-4904-a797-bc83861d5c0e" }
-        - { env: "Prod", rg: "Levi-AzureArc-Servers", sub: "f272d28a-9a50-4653-b356-5b285c014298" }
+# ---------------------------------------------------------
+# STEP 2: Capture the correct details if found
+# ---------------------------------------------------------
+- name: Set facts for the found machine
+  ansible.builtin.set_fact:
+    found_arc_machine:
+      resource_group: "{{ item.item.rg }}"
+      subscription_id: "{{ item.item.sub }}"
+      env_name: "{{ item.item.env }}"
+  loop: "{{ arc_check_results.results }}"
+  when:
+    - item.response is defined
+    - (item.response | length) > 0
+  no_log: true
 
-    # ---------------------------------------------------------
-    # STEP 2: Capture the correct details if found
-    # ---------------------------------------------------------
-    - name: Set facts for the found machine
-      ansible.builtin.set_fact:
-        found_arc_machine:
-          resource_group: "{{ item.item.rg }}"
-          subscription_id: "{{ item.item.sub }}"
-          env_name: "{{ item.item.env }}"
-      loop: "{{ arc_check_results.results }}"
-      when:
-        - item.response is defined
-        - (item.response | length) > 0
-      no_log: true
+- name: Debug info
+  ansible.builtin.debug:
+    msg: "Machine found in {{ found_arc_machine.env_name }} (RG: {{ found_arc_machine.resource_group }})"
+  when: found_arc_machine is defined
 
-    - name: Debug info
-      ansible.builtin.debug:
-        msg: "Machine found in {{ found_arc_machine.env_name }} (RG: {{ found_arc_machine.resource_group }})"
-      when: found_arc_machine is defined
-
-    # ---------------------------------------------------------
-    # STEP 3: Delete using the captured details
-    # ---------------------------------------------------------
-    - name: Delete Azure Arc Machine resource
-      azure.azcollection.azure_rm_resource:
-        # Use the variables we captured in Step 2
-        resource_group: "{{ found_arc_machine.resource_group }}"
-        subscription_id: "{{ found_arc_machine.subscription_id }}"
-        
-        provider: HybridCompute
-        resource_type: machines
-        resource_name: "{{ inventory_hostname }}"
-        api_version: "2022-03-10"
-        state: absent
-      delegate_to: localhost
-      register: arc_delete_result
-      # Only run this if we actually found the machine in Step 1/2
-      when: found_arc_machine is defined
+# ---------------------------------------------------------
+# STEP 3: Delete using the captured details
+# ---------------------------------------------------------
+- name: Delete Azure Arc Machine resource
+  azure.azcollection.azure_rm_resource:
+    resource_group: "{{ found_arc_machine.resource_group }}"
+    subscription_id: "{{ found_arc_machine.subscription_id }}"
+    provider: HybridCompute
+    resource_type: machines
+    resource_name: "{{ inventory_hostname }}"
+    api_version: "2022-03-10"
+    state: absent
+  delegate_to: localhost
+  register: arc_delete_result
+  when: found_arc_machine is defined
