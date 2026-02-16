@@ -58,9 +58,14 @@
         state: absent
       register: uninstall_result
 
-    - name: Display status
+    # Updated Summary Task
+    - name: "SUMMARY: Removal Status"
       ansible.builtin.debug:
-        msg: "{{ 'open-vm-tools was successfully uninstalled.' if uninstall_result.changed else 'open-vm-tools was not found (already absent).' }}"
+        msg: 
+          - "----------------------------------------------------"
+          - "HOST: {{ inventory_hostname }}"
+          - "STATUS: {{ 'REMOVED (Change Applied)' if uninstall_result.changed else 'SKIPPED (Not Found/Already Absent)' }}"
+          - "----------------------------------------------------"
 
 #############   Login to Linux VM and Check /etc/hosts for OnPrem IPs (172.x.x.x)   #############
 - name: Check /etc/hosts for OnPrem IPs (172.x.x.x)
