@@ -74,7 +74,7 @@
         #virtual_network: "{{ nic_info.networkinterfaces[0].virtual_network.name }}"
         virtual_network: "/subscriptions/{{ nic_info.networkinterfaces[0].virtual_network.subscription_id }}/resourceGroups/{{ nic_info.networkinterfaces[0].virtual_network.resource_group }}/providers/Microsoft.Network/virtualNetworks/{{ nic_info.networkinterfaces[0].virtual_network.name }}"
         subnet_name: "{{ nic_info.networkinterfaces[0].subnet }}"
-        virtual_network_resource_group: "{{ nic_info.networkinterfaces[0].virtual_network.resource_group }}"
+        #virtual_network_resource_group: "{{ nic_info.networkinterfaces[0].virtual_network.resource_group }}"
       when:
         - (vm_info.vms | default([]) | length) > 0
         - image_sku is not search("2008")
