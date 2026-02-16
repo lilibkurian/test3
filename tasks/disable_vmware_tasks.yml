@@ -1,0 +1,4 @@
+---
+- name: Stop and Disable VMware Services (Display Names)
+  ansible.windows.win_shell: |
+    Get-Service -DisplayName "VMware*" | Stop-Service -Force -PassThru | Set-Service -StartupType Disabled

@@ -1,0 +1,31 @@
+- name: Check if Azure Connected Machine Agent is installed
+  ansible.windows.win_powershell:
+    script: |
+      Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq "{{ agent_name | default('Azure Connected Machine Agent') }}" }
+  register: agent_check
+
+- name: Disconnect agent locally (Force Local Only)
+  ansible.windows.win_shell: |
+    & "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" disconnect --force-local-only
+  when: agent_check.output | length > 0
+  ignore_errors: yes
+  args:
+    executable: powershell
+
+- name: Uninstall Azure Connected Machine Agent
+  ansible.windows.win_shell: |
+    $app = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq "{{ agent_name | default('Azure Connected Machine Agent') }}" }
+    if ($app) {
+        $app.Uninstall()
+    }
+  when: agent_check.output | length > 0
+
+- name: Remove leftover Agent directories
+  ansible.windows.win_file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "C:\\Program Files\\AzureConnectedMachineAgent"
+    - "C:\\ProgramData\\AzureConnectedMachineAgent"
+    - "C:\\ProgramData\\GuestConfig"
+  ignore_errors: yes

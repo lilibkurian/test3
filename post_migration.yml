@@ -10,7 +10,7 @@
 
   tasks:
     - name: Run Azure Arc Uninstallation Tasks
-      include_tasks: tasks/uninstall_arc_tasks.yml
+      ansible.builtin.include_tasks: tasks/uninstall_arc_tasks.yml
 
     - name: Run VMware cleanup tasks
       ansible.builtin.include_tasks: tasks/disable_vmware_tasks.yml

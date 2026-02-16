@@ -1,0 +1,37 @@
+---
+- name: Check Windows hosts file for OnPrem (172.*) entries
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $HostsPath = 'C:\Windows\System32\drivers\etc\hosts'
+
+      if (-not (Test-Path -LiteralPath $HostsPath)) {
+        throw "Hosts file not found: $HostsPath"
+      }
+
+      $lines = Get-Content -LiteralPath $HostsPath -ErrorAction Stop
+      $results = New-Object System.Collections.Generic.List[string]
+      $found = $false
+
+      foreach ($line in $lines) {
+        # 1. Skip lines that are already commented out
+        if ($line -match '^\s*#') { continue }
+
+        # 2. Check for lines starting with 172.
+        if ($line -match '^\s*172\.') {
+          $found = $true
+          $results.Add("OnPremise IP Found: $line")
+        }
+      }
+
+      # Return the list if we found something, otherwise a standard message
+      if ($found) {
+        return $results
+      } else {
+        return "No OnPremise IP (172.x.x.x) entries found"
+      }
+  register: hosts_check
+
+- name: Show result
+  ansible.builtin.debug:
+    msg: "{{ hosts_check.output }}"
