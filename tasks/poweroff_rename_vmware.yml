@@ -22,7 +22,7 @@
   ignore_errors: true
   delegate_to: localhost
   # This makes it run quietly until it finds the right one
-  no_log: true
+  #no_log: true
 
 - name: Identify correct vCenter
   set_fact:
