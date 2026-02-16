@@ -1,43 +1,20 @@
 ---
-- name: Post migration steps for the migrated VM from Azure console
-  hosts: azure_windows  # Target the group directly
-  connection: local     # Run Azure modules locally, not on the VM
-  gather_facts: false
-
-  # Map inventory variables to the 'target' structure used in your tasks
-  vars:
-    required_rg_tags:
-      business-internalorder: "wl-to-azure-2026"
-    target:
-      vm_name: "{{ inventory_hostname }}"
-      resource_group: "{{ resource_group }}"
-
-  tasks:
-    - name: Tagging Block
-      throttle: 5
-      block:
-        - name: Enforce RG/VM tags
-          ansible.builtin.include_tasks: tasks/update_tags.yml
-            
-    - name: Enable Accelerated Networking Block
-      throttle: 3  # <--- CRITICAL: Limits this specific task to 3 VMs at a time
-      block:
-        - name: Enable accelerated networking for each Azure VM
-          ansible.builtin.include_tasks: tasks/enable_accel_nw.yml
-
-###############  Verify DNS resolution IP ####################
-- name: Login to test Windows VM and validate Azure Windows DNS
-  hosts: test_window
+######################### Clean up ##########################
+- name: Post migration steps within the VM
+  hosts: azure_windows
   gather_facts: false
 
   vars:
-    # Group containing DNS --> IP mappings
-    target_group: "azure_windows"
+    # You can define the variable here, or let the task file use its default
+    agent_name: "Azure Connected Machine Agent"
 
   tasks:
-    - name: Verify WinRM connectivity
-      ansible.windows.win_ping:
+    - name: Run Azure Arc Uninstallation Tasks
+      include_tasks: tasks/uninstall_arc_tasks.yml
 
-    - name: Verify DNS resolution for Azure Windows hosts
-      ansible.builtin.include_tasks: tasks/verify_dns_entries.yml
+    - name: Run VMware cleanup tasks
+      ansible.builtin.include_tasks: tasks/disable_vmware_tasks.yml
 
+    - name: Check hosts file having on-premises IP
+      ansible.builtin.include_tasks: tasks/check_onprem_ip_in_hosts.yml
+      #tasks/update_hosts_from_onprem.yml
