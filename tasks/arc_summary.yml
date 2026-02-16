@@ -1,0 +1,30 @@
+---
+- name: Summarize Azure Arc deletion results
+  run_once: true
+  delegate_to: localhost
+  debug:
+    msg:
+      - "Azure Arc machines deleted: {{ deleted_hosts }}"
+      - "Azure Arc machines not found: {{ not_found_hosts }}"
+  vars:
+    # Logic: It is deleted ONLY if we found a valid ID in the check phase
+    deleted_hosts: >-
+      {%- set res = [] -%}
+      {%- for host in ansible_play_hosts -%}
+        {%- set resp = hostvars[host]['arc_info']['response'] | default([]) -%}
+        {%- if resp | length > 0 and 'id' in resp[0] -%}
+          {%- set _ = res.append(host) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ res }}
+
+    # Logic: It is 'Not Found' if the response was empty OR contained an error (no 'id')
+    not_found_hosts: >-
+      {%- set res = [] -%}
+      {%- for host in ansible_play_hosts -%}
+        {%- set resp = hostvars[host]['arc_info']['response'] | default([]) -%}
+        {%- if resp | length == 0 or 'id' not in resp[0] -%}
+          {%- set _ = res.append(host) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ res }}

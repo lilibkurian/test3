@@ -1,0 +1,33 @@
+---
+- name: Check if Azure Arc Machine exists
+  azure.azcollection.azure_rm_resource_info:
+    resource_group: "Levi-AzureArc-Servers"  ### prod
+    #resource_group: "Levi-AzureArc-SQLdev"  ### dev
+    provider: HybridCompute
+    resource_type: machines
+    resource_name: "{{ inventory_hostname }}"
+    api_version: "2022-03-10"
+    # FORCE the module to use the inventory variable, not the CLI default
+    subscription_id: "f272d28a-9a50-4653-b356-5b285c014298"  ### prod
+    #subscription_id: "a0be611e-56e8-4904-a797-bc83861d5c0e"  ### dev
+  delegate_to: localhost
+  register: arc_info
+  ignore_errors: true
+
+- name: Delete Azure Arc Machine resource
+  azure.azcollection.azure_rm_resource:
+    resource_group: "Levi-AzureArc-Servers"  ### prod
+    #resource_group: "Levi-AzureArc-SQLdev"  ### dev
+    provider: HybridCompute
+    resource_type: machines
+    resource_name: "{{ inventory_hostname }}"
+    api_version: "2022-03-10"
+    state: absent
+    # FORCE the module to use the inventory variable
+    subscription_id: "f272d28a-9a50-4653-b356-5b285c014298"  ### prod
+    #subscription_id: "a0be611e-56e8-4904-a797-bc83861d5c0e"  ### dev
+  delegate_to: localhost
+  register: arc_delete_result
+  when:
+    - arc_info.response | length > 0
+    - "'id' in arc_info.response[0]"

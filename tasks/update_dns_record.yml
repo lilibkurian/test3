@@ -1,0 +1,44 @@
+---
+- name: Update DNS Record via DNSCMD
+  ansible.windows.win_shell: |
+    # Setup Credential using the explicit Service Account variables
+    $pass = ConvertTo-SecureString -String "{{ win_pass }}" -AsPlainText -Force
+    $cred = New-Object System.Management.Automation.PSCredential ("{{ win_user }}", $pass)
+
+    $name = "{{ inventory_hostname }}"
+    $ip   = "{{ ansible_host }}"
+    $zone = "{{ zone_name }}"
+
+    # Define the script to run ON the Domain Controller
+    $ScriptBlock = {
+        param($name, $ip, $zone)
+        $ErrorActionPreference = "Stop"
+
+        # Try to delete existing A record (Forcefully)
+        cmd.exe /c "dnscmd . /RecordDelete $zone $name A /f" | Out-Null
+
+        # Add the new record
+        $result = cmd.exe /c "dnscmd . /RecordAdd $zone $name A $ip"
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Output "SUCCESS: $name updated to $ip"
+        } else {
+            throw "FAILED: $result"
+        }
+    }
+
+    # Launch on DC
+    Invoke-Command -ComputerName {{ dns_server }} -Credential $cred -ScriptBlock $ScriptBlock -ArgumentList $name, $ip, $zone
+
+  # Delegate execution to the Jump Server
+  delegate_to: "{{ jump_host }}"
+
+  vars:
+    ansible_winrm_transport: ntlm
+
+  no_log: true
+  register: dnscmd_output
+
+- name: Verify Results
+  debug:
+    msg: "{{ dnscmd_output.stdout_lines }}"

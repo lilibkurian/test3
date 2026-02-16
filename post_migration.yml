@@ -1,107 +1,19 @@
 ---
-##############   Login to Linux VM and get the mount points   #############
-- name: Test Connectivity to Linux Infrastructure
-  hosts: azure_linux
-  gather_facts: no
+#########################################################
+####  Post Application Validation Steps for Windows VMs
+#########################################################
 
-  vars:
-    #ansible_user: "{{ lookup('env', 'DOMAIN_SSH_USER') }}"
-    #ansible_ssh_private_key_file: "{{ lookup('env', 'DOMAIN_SSH_KEY_PATH') }}"
-
-  tasks:
-    - name: Ping the server to verify SSH and Python
-      ansible.builtin.ping:
-      register: ping_result
-
-    - name: Print success message
-      ansible.builtin.debug:
-        msg: "Success! Connected as {{ ansible_user }} to {{ inventory_hostname }}"
-
-
-    # Display Mount Points on Linux VMs
-    - name: Run 'df -h' to see disk space usage
-      ansible.builtin.command: df -h
-      register: df_output
-      changed_when: false
-
-    - name: Display 'df -h' output
-      ansible.builtin.debug:
-        msg: "{{ df_output.stdout_lines }}"
-
-################   Login to Linux VM and uninstall Azure Connected Machine Agent    ################
-- name: Uninstall Azure Connected Machine Agent
-  hosts: azure_linux
-  become: yes  # This executes the task with sudo
-  gather_facts: yes
+- name: Delete Azure Arc Machines
+  hosts: azure_windows
+  connection: local
+  gather_facts: false
 
   tasks:
-    - name: Remove azcmagent package (Auto-detects apt/yum)
-      ansible.builtin.package:
-        name: azcmagent
-        state: absent
-      register: remove_result
+    - name: Delete Azure Arc Machines
+      throttle: 3
+      block:
+        - name: Include Deletion Logic
+          ansible.builtin.include_tasks: tasks/delete_arc_vm.yml
 
-    - name: Verify removal status
-      ansible.builtin.debug:
-        msg: "{{ 'Package successfully uninstalled.' if remove_result.changed else 'Package not found (already absent).' }}"
-
-############   Login to Linux VM and Disable or uninstall VMware Tools  ##############
-- name: Disable or Uninstall VMware Tools
-  hosts: azure_linux
-  become: yes
-  gather_facts: yes
-
-  tasks:
-    - name: Ensure open-vm-tools is uninstalled
-      ansible.builtin.package:
-        name: open-vm-tools
-        state: absent
-      register: uninstall_result
-
-    # Updated Summary Task
-    - name: "SUMMARY: Removal Status"
-      ansible.builtin.debug:
-        msg: 
-          - "----------------------------------------------------"
-          - "HOST: {{ inventory_hostname }}"
-          - "STATUS: {{ 'REMOVED (Change Applied)' if uninstall_result.changed else 'SKIPPED (Not Found/Already Absent)' }}"
-          - "----------------------------------------------------"
-
-#############   Login to Linux VM and Check /etc/hosts for OnPrem IPs (172.x.x.x)   #############
-- name: Check /etc/hosts for OnPrem IPs (172.x.x.x)
-  hosts: azure_linux
-  become: yes
-  gather_facts: no
-
-  tasks:
-    - name: Search for IPs starting with 172. in /etc/hosts
-      ansible.builtin.shell: grep "^172\." /etc/hosts
-      register: grep_result
-      # rc 0 = found, rc 1 = not found. We fail only on system errors (>1).
-      failed_when: grep_result.rc > 1
-      changed_when: false
-
-    # Group hosts into 'found' or 'missing' lists for the summary play
-    - name: Group hosts based on search results
-      ansible.builtin.group_by:
-        key: "onprem_ip_{{ 'found' if grep_result.rc == 0 else 'missing' }}"
-
-#############   Summary Report   #############
-- name: Display Status Report
-  hosts: localhost
-  gather_facts: no
-  tasks:
-    - name: "--- DETAILS: Hosts containing OnPrem IPs ---"
-      ansible.builtin.debug:
-        msg:
-          - "------------------------------------------------------------"
-          - "HOST: [{{ item }}]"
-          - "{{ hostvars[item]['grep_result']['stdout_lines'] }}"
-      # Loop through the group of hosts where IPs were found
-      loop: "{{ groups['onprem_ip_found'] | default([]) | sort }}"
-      loop_control:
-        label: "{{ item }}"
-
-    - name: "--- SUMMARY: Hosts WITHOUT OnPrem IPs ---"
-      ansible.builtin.debug:
-        msg: "{{ groups['onprem_ip_missing'] | default([]) | sort }}"
+    - name: Run Arc deletion Summary
+      ansible.builtin.include_tasks: tasks/arc_summary.yml
