@@ -71,6 +71,9 @@
         name: "{{ nic_name }}"
         enable_accelerated_networking: true
         security_group: "{{ nic_nsg_id if nic_nsg_id | length > 0 else omit }}"
+        virtual_network: "{{ nic_info.networkinterfaces[0].virtual_network.name }}"
+        subnet_name: "{{ nic_info.networkinterfaces[0].subnet }}"
+        virtual_network_resource_group: "{{ nic_info.networkinterfaces[0].virtual_network.resource_group }}"
       when:
         - (vm_info.vms | default([]) | length) > 0
         - image_sku is not search("2008")
