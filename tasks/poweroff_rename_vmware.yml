@@ -19,7 +19,7 @@
     name: "{{ inventory_hostname }}"
   loop: "{{ vcenters_list }}"
   register: vm_search_results
-  ignore_errors: true
+  ignore_errors: false
   delegate_to: localhost
   # This makes it run quietly until it finds the right one
   no_log: false
