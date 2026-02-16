@@ -32,7 +32,7 @@
   when:
     - item is succeeded
     - item.instance is defined
-  no_log: true
+  #no_log: true
 
 # --------------------------------------------------------------------------
 # 2. ACTION: Power Off and Rename (Only if VM was found)
