@@ -30,6 +30,7 @@
   when:
     - item.response is defined
     - (item.response | length) > 0
+    - "'id' in item.response[0]"
   no_log: true
 
 - name: Debug info
